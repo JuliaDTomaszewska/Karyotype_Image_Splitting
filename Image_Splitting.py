@@ -1,9 +1,7 @@
-import pytesseract
 from PIL import Image
 import os
 import cv2
 import numpy as np
-pytesseract.pytesseract.tesseract_cmd = r"/opt/homebrew/bin/tesseract"
 
 #Reading the karyotype image 
 image = cv2.imread('50.tif')
@@ -46,12 +44,19 @@ list_of_paired_chromosomes = []
 for chromosome1 in contours_filtered: 
     x, y, w, h = cv2.boundingRect(chromosome1)
     center_of_rectangle_1  = (x + w/2, y + h/2)
+    paired = False
     for chromosome2 in contours_filtered: 
         x, y, w, h = cv2.boundingRect(chromosome2)
         center_of_rectangle_2  = (x + w/2, y + h/2)
         distance = cv2.norm(center_of_rectangle_1, center_of_rectangle_2) 
         if distance < proximity_threshold and not np.array_equal(chromosome1, chromosome2) and not any([np.array_equal(x[0], chromosome2) for x in list_of_paired_chromosomes]): 
             list_of_paired_chromosomes.append((chromosome1, chromosome2))
+        if distance < proximity_threshold and not np.array_equal(chromosome1, chromosome2):
+            paired = True 
+    if not paired: 
+        list_of_paired_chromosomes.append((chromosome1, chromosome1))
+
+cropped_images = []
 
 #Create images of the chromosome pairs 
 for chromosome_pair in list_of_paired_chromosomes: 
@@ -71,23 +76,31 @@ for chromosome_pair in list_of_paired_chromosomes:
         start = (left_chromosome[0], min(y1,y2))
         end = (left_chromosome[0]+w1+w2 + (right_chromosome[0] - (left_chromosome[0] + left_chromosome[2])), min(y1,y2) + max(h1, h2) + ((max(y1,y2) - min(y1,y2)) if (min(y1,y2) + max(h1,h2) < max(y1,y2) + (h1 if max(y1,y2) == y1 else h2)) else 0))
         cropped_image = image[start[1]:end[1], start[0]:end[0]]
+        cropped_images.append((cropped_image, (start, end)))
 
-        #Draws a rectangle around the number of the chromosome 
-        numbers_image = image[end[1]:end[1] + 20, end[0] - w1 - w2:end[0]]
-        gray_numbers_image = cv2.cvtColor(numbers_image, cv2.COLOR_BGR2GRAY)
-        ret, bw_numbers_image = cv2.threshold(gray_numbers_image, 175 , 255, cv2.THRESH_BINARY)
-        bw_numbers_image = cv2.resize(bw_numbers_image, (800,600 ))
-        cv2.imshow("Window2", bw_numbers_image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
 
-        #numbers_image = cv2.resize(numbers_image, (600, 360))
-        cv2.imwrite("Image_testing.jpg", bw_numbers_image)
+#Label the chromosome image with the chromsome number 
+sorted_cropped_images = sorted(cropped_images, key=lambda x: x[1][0][1])
+row_1 = [x[0] for x in sorted(sorted_cropped_images[:5], key=lambda x: x[1][0][0])]
+row_2 = [x[0] for x in sorted(sorted_cropped_images[5:12], key=lambda x: x[1][0][0])]
+row_3 = [x[0] for x in sorted(sorted_cropped_images[12:18], key=lambda x: x[1][0][0])]
+row_4 = [x[0] for x in sorted(sorted_cropped_images[18:], key=lambda x: x[1][0][0])]
+chromosomes_images_in_order = row_1 + row_2 + row_3 + row_4
+print(type(chromosomes_images_in_order[0]))
+chromosome_dictionary = {}
+index = 0
+while index < 22: 
+    chromosome_dictionary[index+1] = chromosomes_images_in_order[index]
+    index += 1
+if len(chromosomes_images_in_order) == 24: 
+    chromosome_dictionary['X'] = chromosomes_images_in_order[22]
+    chromosome_dictionary['Y'] = chromosomes_images_in_order[23]
+else: 
+    chromosome_dictionary['X'] = chromosomes_images_in_order[22]
 
-        #Creating files & Identifying Numbers   
-        number = pytesseract.image_to_string('Image_testing.jpg', lang="eng", timeout=10000)
-        print(number)
-
+#Create the files with labels 
+for chromosome_image_and_label in chromosome_dictionary: 
+    cv2.imwrite(str(chromosome_image_and_label) + ".jpg", chromosome_dictionary[chromosome_image_and_label])
 
  
 
